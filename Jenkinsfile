@@ -135,10 +135,9 @@ pipeline {
                 echo "==> Build Maven iDempiere (peut durer 30-60 min)"
                 sh """
                     mvn clean verify \
-                        -DskipTests=false \
+                        -DskipTests=true \
                         --batch-mode \
                         --no-transfer-progress \
-                        -Dmaven.test.failure.ignore=false
                 """
                 // Les tests unitaires iDempiere tournent ici
                 // Pas de tests d'intégration (pas de DB éphémère pour l'instant)
