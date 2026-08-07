@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Le chemin exact peut varier — ajuste si besoin après le premier build
 WORKDIR ${IDEMPIERE_HOME}
 
-COPY org.idempiere.server-${BRANCH}/ ./
+COPY org.idempiere.p2/target/products/org.adempiere.server.product/linux/gtk/x86_64/ ./
 # Fallback : si le répertoire est nommé différemment
 # COPY idempiere.gtk.linux.x86_64/ ./
 

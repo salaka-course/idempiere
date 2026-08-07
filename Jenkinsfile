@@ -81,6 +81,13 @@ pipeline {
                           testResults: '**/target/surefire-reports/*.xml'
                 }
             }
+
+            post {
+                success {
+                    archiveArtifacts artifacts: 'org.idempiere.p2/target/products/**',
+                            allowEmptyArchive: true
+                    }
+            }
         }
 
         stage('Find Artifacts') {
@@ -96,6 +103,12 @@ pipeline {
                         -o -type d -name "*gtk*linux*" \
                         -o -type d -name "org.adempiere.server*" \\) \
                         2>/dev/null | grep -v ".git" | grep -v "/.m2/"
+                """
+
+                sh """
+                    echo "=== Contenu du répertoire produit ==="
+                    ls -la org.idempiere.p2/target/products/org.adempiere.server.product/ || echo "absent"
+                    ls -la org.idempiere.p2/target/products/org.adempiere.server.product/linux/gtk/x86_64/ || echo "absent"
                 """
             }
         }
