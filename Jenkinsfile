@@ -80,13 +80,10 @@ pipeline {
                     junit allowEmptyResults: true,
                           testResults: '**/target/surefire-reports/*.xml'
                 }
-            }
-
-            post {
                 success {
                     archiveArtifacts artifacts: 'org.idempiere.p2/target/products/**',
-                            allowEmptyArchive: true
-                    }
+                                     allowEmptyArchive: true
+                }
             }
         }
 
@@ -97,15 +94,6 @@ pipeline {
                     echo "=== Contenu org.idempiere.p2/target/ ==="
                     ls -la org.idempiere.p2/target/ || echo "Dossier absent"
 
-                    echo "=== Recherche répertoires produits ==="
-                    find . -maxdepth 5 \
-                        \\( -type d -name "*idempiere*server*" \
-                        -o -type d -name "*gtk*linux*" \
-                        -o -type d -name "org.adempiere.server*" \\) \
-                        2>/dev/null | grep -v ".git" | grep -v "/.m2/"
-                """
-
-                sh """
                     echo "=== Contenu du répertoire produit ==="
                     ls -la org.idempiere.p2/target/products/org.adempiere.server.product/ || echo "absent"
                     ls -la org.idempiere.p2/target/products/org.adempiere.server.product/linux/gtk/x86_64/ || echo "absent"
@@ -230,7 +218,7 @@ ENDSSH
                 docker rmi ${IMAGE_FULL} ${IMAGE_LATEST} || true
                 docker image prune -f || true
             """
-//           cleanWs()
+            cleanWs()
         }
     }
 }
