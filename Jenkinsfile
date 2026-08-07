@@ -217,7 +217,7 @@ ENDSSH
                 docker rmi ${IMAGE_FULL} ${IMAGE_LATEST} || true
                 docker image prune -f || true
             """
-            cleanWs()
+//           cleanWs()
         }
     }
 }
