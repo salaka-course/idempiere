@@ -30,6 +30,7 @@ pipeline {
     // ── Variables globales ────────────────────────────────────
     environment {
         // SCM — repo public, pas de credentials
+        PATH = "/opt/maven/bin:${env.PATH}"
         REPO_URL    = 'https://github.com/salaka-course/idempiere.git'
         BRANCH      = 'release-12'
 
