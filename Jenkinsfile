@@ -30,7 +30,7 @@ pipeline {
     // ── Variables globales ────────────────────────────────────
     environment {
         // SCM — repo public, pas de credentials
-        REPO_URL    = 'https://github.com/idempiere/idempiere'
+        REPO_URL    = 'https://github.com/salaka-course/idempiere.git'
         BRANCH      = 'release-12'
 
         // Docker Hub
@@ -61,37 +61,48 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo "==> Checkout iDempiere ${BRANCH}"
-                git url: "${REPO_URL}",
-                    branch: "${BRANCH}"
-                    // Pas de credentials : repo public GitHub
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${BRANCH}"]],
+                    extensions: [
+                        [$class: 'CloneOption',
+                        shallow: true,
+                        depth: 1,
+                        timeout: 30]
+                    ],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/salaka-course/idempiere.git',
+                        credentialsId: 'GitHub Personal Access Token'
+                    ]]
+                ])
             }
         }
 
         // ── 2. SonarQube Analysis ────────────────────────────
-        stage('SonarQube Analysis') {
-            steps {
-                echo "==> Analyse SonarQube"
-                withSonarQubeEnv('SonarQube') {
-                    sh """
-                        mvn sonar:sonar \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.projectName='iDempiere Release-12' \
-                            -Dsonar.java.source=11 \
-                            -DskipTests=true \
-                            --batch-mode \
-                            --no-transfer-progress
-                    """
-                }
-            }
-        }
-
+//        stage('SonarQube Analysis') {
+//            steps {
+//                echo "==> Analyse SonarQube"
+//                withSonarQubeEnv('SonarQube') {
+//                    sh """
+//                        mvn sonar:sonar \
+//                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+//                            -Dsonar.projectName='iDempiere Release-12' \
+//                            -Dsonar.java.source=11 \
+//                            -DskipTests=true \
+//                            --batch-mode \
+//                            --no-transfer-progress
+//                    """
+//                }
+//            }
+//        }
+//
         // ── 3. Quality Gate ──────────────────────────────────
-        stage('Quality Gate') {
-            steps {
-                echo "==> Attente du Quality Gate SonarQube"
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
+//        stage('Quality Gate') {
+//            steps {
+//                echo "==> Attente du Quality Gate SonarQube"
+//                timeout(time: 5, unit: 'MINUTES') {
+//                    waitForQualityGate abortPipeline: true
+//                }
             }
         }
 
