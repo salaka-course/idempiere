@@ -103,8 +103,8 @@ pipeline {
 //                timeout(time: 5, unit: 'MINUTES') {
 //                    waitForQualityGate abortPipeline: true
 //                }
-            }
-        }
+//            }
+//        }
 
         // ── 4. Trivy FS Scan ─────────────────────────────────
         stage('Trivy FS Scan') {
