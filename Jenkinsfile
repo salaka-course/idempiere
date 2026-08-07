@@ -1,64 +1,34 @@
-// ============================================================
-//  Pipeline CI/CD — iDempiere release-12
-//  Repo  : https://github.com/idempiere/idempiere
-//  Infra : Jenkins :8080 | SonarQube :9000 | Docker Hub germain24/
-// ============================================================
-
 pipeline {
 
     agent any
 
-    // ── Paramètres ────────────────────────────────────────────
     parameters {
-        booleanParam(
-            name        : 'SKIP_MAVEN_BUILD',
-            defaultValue: false,
-            description : 'Sauter le build Maven (pour tester les stages Docker uniquement)'
-        )
-        booleanParam(
-            name        : 'DEPLOY',
-            defaultValue: false,
-            description : 'Activer le déploiement (désactivé tant que le serveur cible n\'est pas défini)'
-        )
-        string(
-            name        : 'DEPLOY_HOST',
-            defaultValue: '192.168.2.183',
-            description : 'IP ou hostname du serveur de déploiement'
-        )
+        booleanParam(name: 'SKIP_MAVEN_BUILD', defaultValue: false, description: 'Sauter le build Maven')
+        booleanParam(name: 'DEPLOY', defaultValue: false, description: 'Activer le déploiement')
+        string(name: 'DEPLOY_HOST', defaultValue: '192.168.2.183', description: 'IP du serveur de déploiement')
     }
 
-    // ── Variables globales ────────────────────────────────────
     environment {
-        // SCM — repo public, pas de credentials
-        PATH = "/opt/maven/bin:${env.PATH}"
+        PATH        = "/opt/maven/bin:${env.PATH}"
         REPO_URL    = 'https://github.com/salaka-course/idempiere.git'
         BRANCH      = 'release-12'
-
-        // Docker Hub
         IMAGE_NAME  = 'germain24/idempiere-release12'
         IMAGE_TAG   = "${BUILD_NUMBER}"
         IMAGE_FULL  = "germain24/idempiere-release12:${BUILD_NUMBER}"
         IMAGE_LATEST= 'germain24/idempiere-release12:latest'
-
-        // SonarQube
         SONAR_PROJECT_KEY = 'idempiere-release12'
-
-        // Déploiement
         DEPLOY_USER = 'isnov-promote'
         DEPLOY_DIR  = '/home/isnov-promote/idempiere-release12'
     }
 
-    // ── Options ───────────────────────────────────────────────
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 120, unit: 'MINUTES')   // build iDempiere peut être long
+        timeout(time: 120, unit: 'MINUTES')
         disableConcurrentBuilds()
     }
 
-    // ── Stages ───────────────────────────────────────────────
     stages {
 
-        // ── 1. Checkout ──────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "==> Checkout iDempiere ${BRANCH}"
@@ -66,10 +36,7 @@ pipeline {
                     $class: 'GitSCM',
                     branches: [[name: "*/${BRANCH}"]],
                     extensions: [
-                        [$class: 'CloneOption',
-                        shallow: true,
-                        depth: 1,
-                        timeout: 30]
+                        [$class: 'CloneOption', shallow: true, depth: 1, timeout: 30]
                     ],
                     userRemoteConfigs: [[
                         url: 'https://github.com/salaka-course/idempiere.git',
@@ -79,38 +46,9 @@ pipeline {
             }
         }
 
-        // ── 2. SonarQube Analysis ────────────────────────────
-//        stage('SonarQube Analysis') {
-//            steps {
-//                echo "==> Analyse SonarQube"
-//                withSonarQubeEnv('SonarQube') {
-//                    sh """
-//                        mvn sonar:sonar \
-//                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-//                            -Dsonar.projectName='iDempiere Release-12' \
-//                            -Dsonar.java.source=11 \
-//                            -DskipTests=true \
-//                            --batch-mode \
-//                            --no-transfer-progress
-//                    """
-//                }
-//            }
-//        }
-//
-        // ── 3. Quality Gate ──────────────────────────────────
-//        stage('Quality Gate') {
-//            steps {
-//                echo "==> Attente du Quality Gate SonarQube"
-//                timeout(time: 5, unit: 'MINUTES') {
-//                    waitForQualityGate abortPipeline: true
-//                }
-//            }
-//        }
-
-        // ── 4. Trivy FS Scan ─────────────────────────────────
         stage('Trivy FS Scan') {
             steps {
-                echo "==> Scan Trivy filesystem (secrets + vulnérabilités)"
+                echo "==> Scan Trivy filesystem"
                 sh """
                     trivy fs . \
                         --exit-code 1 \
@@ -121,37 +59,47 @@ pipeline {
                         --timeout 10m \
                         2>&1 | tee trivy-fs-report.txt || true
                 """
-                // 'true' en fin : ne bloque pas le pipeline sur FS scan
-                // Ajuste exit-code à 1 si tu veux bloquer sur CRITICAL
             }
         }
 
-        // ── 5. Maven Build ───────────────────────────────────
         stage('Maven Build') {
             when {
                 expression { !params.SKIP_MAVEN_BUILD }
             }
             steps {
-                echo "==> Build Maven iDempiere (peut durer 30-60 min)"
+                echo "==> Build Maven iDempiere"
                 sh """
                     mvn clean verify \
                         -DskipTests=true \
                         --batch-mode \
-                        --no-transfer-progress \
+                        --no-transfer-progress
                 """
-                // Les tests unitaires iDempiere tournent ici
-                // Pas de tests d'intégration (pas de DB éphémère pour l'instant)
             }
             post {
                 always {
-                    // Publier les résultats de tests JUnit si présents
                     junit allowEmptyResults: true,
                           testResults: '**/target/surefire-reports/*.xml'
                 }
             }
         }
 
-        // ── 6. Docker Build ──────────────────────────────────
+        stage('Find Artifacts') {
+            steps {
+                echo "==> Recherche des artefacts Maven produits"
+                sh """
+                    echo "=== Contenu org.idempiere.p2/target/ ==="
+                    ls -la org.idempiere.p2/target/ || echo "Dossier absent"
+
+                    echo "=== Recherche répertoires produits ==="
+                    find . -maxdepth 5 \
+                        \\( -type d -name "*idempiere*server*" \
+                        -o -type d -name "*gtk*linux*" \
+                        -o -type d -name "org.adempiere.server*" \\) \
+                        2>/dev/null | grep -v ".git" | grep -v "/.m2/"
+                """
+            }
+        }
+
         stage('Docker Build') {
             steps {
                 echo "==> Build image Docker ${IMAGE_FULL}"
@@ -167,7 +115,6 @@ pipeline {
             }
         }
 
-        // ── 7. Trivy Image Scan ──────────────────────────────
         stage('Trivy Image Scan') {
             steps {
                 echo "==> Scan Trivy image Docker"
@@ -181,11 +128,9 @@ pipeline {
                         ${IMAGE_FULL} \
                         2>&1 | tee trivy-image-report.txt
                 """
-                // Bloque sur CRITICAL uniquement (exit-code 1)
             }
         }
 
-        // ── 8. Push Docker Hub ───────────────────────────────
         stage('Push Docker Hub') {
             steps {
                 echo "==> Push ${IMAGE_FULL} vers Docker Hub"
@@ -204,7 +149,6 @@ pipeline {
             }
         }
 
-        // ── 9. Deploy ────────────────────────────────────────
         stage('Deploy') {
             when {
                 expression { params.DEPLOY == true }
@@ -212,34 +156,20 @@ pipeline {
             steps {
                 echo "==> Déploiement sur ${params.DEPLOY_HOST}"
                 withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: 'deploy-ssh-key',
-                        keyFileVariable: 'SSH_KEY'
-                    ),
-                    string(
-                        credentialsId: 'db-password',
-                        variable     : 'DB_PASS'
-                    )
+                    sshUserPrivateKey(credentialsId: 'deploy-ssh-key', keyFileVariable: 'SSH_KEY'),
+                    string(credentialsId: 'db-password', variable: 'DB_PASS')
                 ]) {
-                    // Copier docker-compose.yml sur le serveur cible
                     sh """
-                        scp -i ${SSH_KEY} \
-                            -o StrictHostKeyChecking=no \
+                        scp -i ${SSH_KEY} -o StrictHostKeyChecking=no \
                             docker-compose.yml \
                             ${DEPLOY_USER}@${params.DEPLOY_HOST}:${DEPLOY_DIR}/docker-compose.yml
                     """
-
-                    // Générer le .env et déployer
                     sh """
-                        ssh -i ${SSH_KEY} \
-                            -o StrictHostKeyChecking=no \
-                            ${DEPLOY_USER}@${params.DEPLOY_HOST} << 'ENDSSH'
-
-                            set -e
-                            cd ${DEPLOY_DIR}
-
-                            # Générer le .env (sans exposer le mot de passe dans les logs)
-                            cat > .env << EOF
+                        ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no \
+                            ${DEPLOY_USER}@${params.DEPLOY_HOST} bash -s << 'ENDSSH'
+set -e
+cd ${DEPLOY_DIR}
+cat > .env << EOF
 IMAGE_NAME=${IMAGE_FULL}
 DB_HOST=localhost
 DB_PORT=5444
@@ -248,21 +178,15 @@ DB_USER=adempiere
 DB_PASSWORD=${DB_PASS}
 APP_PORT=8099
 EOF
-
-                            echo "==> .env généré :"
-                            grep -v PASSWORD .env
-
-                            # Pull + redémarrage
-                            docker compose pull
-                            docker compose up -d --remove-orphans
-
+grep -v PASSWORD .env
+docker compose pull
+docker compose up -d --remove-orphans
 ENDSSH
                     """
                 }
             }
         }
 
-        // ── 10. Health Check ─────────────────────────────────
         stage('Health Check') {
             when {
                 expression { params.DEPLOY == true }
@@ -271,33 +195,24 @@ ENDSSH
                 echo "==> Health Check iDempiere"
                 sh """
                     sleep 30
-                    curl --retry 5 \
-                         --retry-delay 15 \
-                         --retry-connrefused \
-                         -f \
-                         http://${params.DEPLOY_HOST}:8099/webui/index.zul \
+                    curl --retry 5 --retry-delay 15 --retry-connrefused -f \
+                        http://${params.DEPLOY_HOST}:8099/webui/index.zul \
                     && echo "==> iDempiere UP" \
                     || (echo "==> iDempiere ne répond pas" && exit 1)
                 """
             }
         }
-
     }
 
-    // ── Post-actions ──────────────────────────────────────────
     post {
         success {
             echo "==> Pipeline terminé avec succès — image : ${IMAGE_FULL}"
         }
         failure {
-            echo "==> Pipeline en échec — consulter les logs ci-dessus"
+            echo "==> Pipeline en échec"
         }
         always {
-            // Archiver les rapports Trivy
-            archiveArtifacts artifacts: 'trivy-*.txt',
-                             allowEmptyArchive: true
-
-            // Nettoyer les images locales pour économiser l'espace disque
+            archiveArtifacts artifacts: 'trivy-*.txt', allowEmptyArchive: true
             sh """
                 docker rmi ${IMAGE_FULL} ${IMAGE_LATEST} || true
                 docker image prune -f || true
@@ -305,5 +220,4 @@ ENDSSH
             cleanWs()
         }
     }
-
 }
